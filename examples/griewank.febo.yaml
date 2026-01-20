@@ -1,0 +1,59 @@
+# Griewank Benchmark
+# f(x) = 1 + (1/4000) Σᵢ xᵢ² - Πᵢ cos(xᵢ/√i)
+# Global minimum: f(0) = 0
+
+febo_version: "0.1"
+name: griewank
+conventions:
+  index_base: 1
+  expr_lang: "febo_expr_v1"
+
+parameters:
+  n: {type: int, default: 1000, description: "Problem dimension"}
+
+variables:
+  x:
+    type: continuous
+    shape: [n]
+    bounds: [-600, 600]
+
+interactions:
+  all_i: {type: all_indices, range: [1, n]}
+
+terms:
+  square: {type: analytic, arity: unary, expr: "x[i]^2"}
+  cosine: {type: analytic, arity: unary, expr: "cos(x[i] / sqrt(i))"}
+  one:    {type: constant, value: 1}
+
+components:
+  quadratic: {term: square, interaction: all_i, agg: sum}
+  oscill:    {term: cosine, interaction: all_i, agg: prod}
+  offset:    {term: one}
+
+hamiltonians:
+  bowl:
+    components:
+      - {use: quadratic, alpha: 1/4000}
+  oscillation:
+    components:
+      - {use: oscill, alpha: -1}
+  constant:
+    components:
+      - {use: offset}                    # alpha defaults to 1
+
+ensemble:
+  - {use: bowl}                          # weight defaults to 1
+  - {use: oscillation}
+  - {use: constant}
+
+metadata:
+  problem_type: continuous_nonconvex
+  global_minimum: 0
+  optimal_solution: "x = (0, ..., 0)"
+  benchmarks:
+    - {n: 2e9, solver: xtellix, time: 43}
+    - {n: 1e5, solver: knitro, time: 795600}
+
+# Usage:
+#   xtellix solve griewank.febo.yaml                   # uses n=1000
+#   xtellix solve griewank.febo.yaml --param n=2e9    # 2 billion variables

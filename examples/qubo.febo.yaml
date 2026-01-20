@@ -1,0 +1,41 @@
+# QUBO (Quadratic Unconstrained Binary Optimization)
+# minimize: xᵀQx where x ∈ {0,1}ⁿ
+
+febo_version: "0.1"
+name: qubo
+conventions:
+  index_base: 1
+
+parameters:
+  n: {type: int, description: "Number of binary variables"}  # required (no default)
+
+variables:
+  x: {type: binary, shape: [n]}
+
+data:
+  Q: {source: "qubo_matrix.csv", format: sparse, shape: [n, n]}
+
+interactions:
+  edges: {type: sparse, source: Q}
+
+terms:
+  quad: {type: analytic, arity: binary, expr: "Q[i,j] * x[i] * x[j]"}
+
+components:
+  objective: {term: quad, interaction: edges, agg: sum}
+
+hamiltonians:
+  H_qubo: {components: [{use: objective, alpha: 1}]}
+
+ensemble:
+  - {use: H_qubo, weight: 1}
+
+metadata:
+  problem_type: qubo
+  compatible_solvers:
+    - "D-Wave"
+    - "Xtellix"
+    - "simulated_annealing"
+
+# Usage:
+#   xtellix solve qubo.febo.yaml --param n=1000    # n is required (no default)

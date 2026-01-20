@@ -1,0 +1,74 @@
+# Supply Chain with Coupling Hamiltonians
+# Production → Distribution → Customers
+# Demonstrates: subsystem H + coupling H
+
+febo_version: "0.1"
+name: supply_chain
+conventions:
+  index_base: 1
+
+parameters:
+  plants:    {type: int, description: "Number of plants"}         # required
+  customers: {type: int, description: "Number of customers"}      # required
+  time:      {type: int, default: 52, description: "Planning periods (weeks)"}
+  capacity:  {type: float, default: 1000, description: "Plant capacity"}
+
+variables:
+  production: {type: continuous, shape: [plants, time], bounds: [0, capacity]}
+  shipment:   {type: continuous, shape: [plants, customers, time], bounds: [0, "inf"]}
+
+data:
+  prod_cost: {source: "prod_cost.csv", shape: [plants]}
+  ship_cost: {source: "ship_cost.csv", shape: [plants, customers]}
+  demand:    {source: "demand.csv", shape: [customers, time]}
+
+interactions:
+  prod_pt:  {type: all_indices, ranges: {p: [1, plants], t: [1, time]}}
+  ship_pct: {type: all_indices, ranges: {p: [1, plants], c: [1, customers], t: [1, time]}}
+  cust_ct:  {type: all_indices, ranges: {c: [1, customers], t: [1, time]}}
+
+terms:
+  t_prod:      {type: analytic, arity: unary, expr: "prod_cost[p] * production[p,t]"}
+  t_ship:      {type: analytic, arity: unary, expr: "ship_cost[p,c] * shipment[p,c,t]"}
+  t_stockout:  {type: analytic, arity: n-ary, expr: "max(0, demand[c,t] - sum_p(shipment[p,c,t]))^2"}
+  t_interface: {type: analytic, arity: n-ary, expr: "(sum_c(shipment[p,c,t]) - production[p,t])^2"}
+
+components:
+  c_prod:      {term: t_prod, interaction: prod_pt, agg: sum}
+  c_ship:      {term: t_ship, interaction: ship_pct, agg: sum}
+  c_stockout:  {term: t_stockout, interaction: cust_ct, agg: sum}
+  c_interface: {term: t_interface, interaction: prod_pt, agg: sum}
+
+hamiltonians:
+  H_production:
+    components:
+      - {use: c_prod, alpha: 1}
+      
+  H_distribution:
+    components:
+      - {use: c_ship, alpha: 1}
+      - {use: c_stockout, alpha: 100}
+      
+  H_coupling:
+    couples: [production, shipment]
+    components:
+      - {use: c_interface, alpha: 1}
+
+ensemble:
+  - {use: H_production, weight: 1}
+  - {use: H_distribution, weight: 1}
+  - {use: H_coupling, weight: 10000}
+
+metadata:
+  problem_type: multi_echelon
+  demonstrates: coupling_hamiltonians
+
+# Usage:
+#   xtellix solve supply_chain.febo.yaml --param plants=10 --param customers=100
+#   xtellix solve supply_chain.febo.yaml --instance params.yaml
+#
+# Instance file (params.yaml):
+#   plants: 50
+#   customers: 500
+#   time: 104      # 2 years
+#   capacity: 5000

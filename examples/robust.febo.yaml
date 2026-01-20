@@ -1,0 +1,43 @@
+# Robust Optimization (Minimax)
+# minimize: max_s f(x, scenario[s])
+# Demonstrates: Max aggregator for worst-case
+
+febo_version: "0.1"
+name: robust_optimization
+conventions:
+  index_base: 1
+
+parameters:
+  n: {type: int, default: 100, description: "Number of variables"}
+  S: {type: int, default: 1000, description: "Number of scenarios"}
+
+variables:
+  x: {type: continuous, shape: [n], bounds: [-10, 10]}
+
+data:
+  scenarios: {source: "scenarios.csv", shape: [S, n]}
+
+interactions:
+  all_i: {type: all_indices, range: [1, n]}
+  all_s: {type: all_indices, range: [1, S]}
+
+terms:
+  loss_s: {type: analytic, arity: n-ary, expr: "sum_i((x[i] - scenarios[s,i])^2)"}
+
+components:
+  worst_case: {term: loss_s, interaction: all_s, agg: max}
+
+hamiltonians:
+  H_robust: {components: [{use: worst_case, alpha: 1}]}
+
+ensemble:
+  - {use: H_robust, weight: 1}
+
+metadata:
+  problem_type: minimax
+  demonstrates: max_aggregator
+  note: "Worst-case scenario determines energy"
+
+# Usage:
+#   xtellix solve robust.febo.yaml                       # n=100, S=1000
+#   xtellix solve robust.febo.yaml --param S=10000      # more scenarios

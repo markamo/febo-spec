@@ -1,0 +1,126 @@
+# Realtime 3D Bin Packing (Candidate-Placement Formulation)
+# 
+# Items arrive in a stream. For each item, we pre-compute candidate
+# placements and their pairwise overlaps, then select exactly one
+# placement per item with no overlaps.
+#
+# This formulation is realtime-friendly because:
+# - Candidate generation is O(grid) per item
+# - Overlap detection is O(P²) but sparse in practice
+# - Solving is fast (sparse binary + groups structure)
+
+febo_version: "0.1.1"
+name: binpack3d_realtime
+conventions:
+  index_base: 1
+
+parameters:
+  P: {type: int, description: "Number of candidate placements"}
+  E: {type: int, description: "Number of overlap edges"}
+  K: {type: int, description: "Number of items"}
+
+variables:
+  # y[p] = 1 if placement p is chosen
+  y: {type: binary, shape: [P]}
+
+data:
+  # Which item each placement belongs to
+  item_of:
+    source: "item_of.csv"
+    shape: [P]
+    dtype: int32
+    
+  # Groups of candidate indices per item (for exactly-one constraints)
+  # Ragged: each item may have different number of candidates
+  candidates_by_item:
+    source: "candidates_by_item.json"
+    dtype: int32
+    shape: [K, "*"]
+    
+  # Overlap edge list: (p, q) means placements p and q collide
+  overlap_pairs:
+    source: "overlap_pairs.parquet"
+    shape: [E, 2]
+    dtype: int32
+    
+  # Cost per placement (wasted volume, travel distance, preference, etc.)
+  cost:
+    source: "cost.csv"
+    shape: [P]
+    dtype: float32
+
+interactions:
+  # Each item's candidate placements (for exactly-one constraint)
+  # bind: p means sum_p() will iterate over candidates in each group
+  by_item: {type: groups, groups: candidates_by_item, bind: p}
+  
+  # Pairs of placements that overlap
+  # bind: [p, q] means p and q are the two indices from each pair
+  overlaps: {type: sparse, source: overlap_pairs, bind: [p, q]}
+  
+  # All placements
+  all_p: {type: all_indices, range: [1, P], bind: p}
+
+terms:
+  # Exactly-one per item: (sum_{p in group} y[p] - 1)^2
+  t_assign:
+    type: analytic
+    arity: n-ary
+    expr: "(sum_p(y[p]) - 1)^2"
+    
+  # Overlap penalty: y[p] * y[q] for conflicting placements
+  t_overlap:
+    type: analytic
+    arity: binary
+    expr: "y[p] * y[q]"
+    
+  # Placement cost
+  t_cost:
+    type: analytic
+    arity: unary
+    expr: "cost[p] * y[p]"
+
+components:
+  c_assign:  {term: t_assign, interaction: by_item, agg: sum}
+  c_overlap: {term: t_overlap, interaction: overlaps, agg: sum}
+  c_cost:    {term: t_cost, interaction: all_p, agg: sum}
+
+hamiltonians:
+  H_constraints:
+    components:
+      - {use: c_assign}       # exactly-one per item
+      - {use: c_overlap}      # no overlaps
+      
+  H_objective:
+    components:
+      - {use: c_cost}
+
+ensemble:
+  - {use: H_objective}
+  - {use: H_constraints, weight: 100000}
+
+metadata:
+  problem_type: binary_quadratic
+  
+  realtime:
+    warm_start: true
+    streaming_updates:
+      - data: candidates_by_item
+      - data: overlap_pairs
+      - data: cost
+    update_frequency: per_item
+    latency_target_ms: 50
+    
+  notes:
+    - "P grows as items arrive (append new candidates)"
+    - "E grows as new overlaps are detected"
+    - "Warm-start from previous y values"
+    - "Typical: P ~ 100-1000 per item, E sparse"
+
+# Usage:
+#   # Initial solve
+#   xtellix solve binpack3d_realtime.febo.yaml --param P=500 --param E=2000 --param K=10
+#   
+#   # Streaming update (new item arrives)
+#   xtellix solve binpack3d_realtime.febo.yaml --warm-start prev_solution.json \
+#       --param P=550 --param E=2200 --param K=11

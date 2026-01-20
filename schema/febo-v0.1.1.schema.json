@@ -1,0 +1,522 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://xtellix.com/febo/v0.1.1/schema.json",
+  "title": "FEBO Problem Specification",
+  "description": "Schema for Functional Energy-Based Optimization problem files v0.1.1",
+  "type": "object",
+  "required": ["febo_version", "name", "variables", "hamiltonians", "ensemble"],
+  
+  "properties": {
+    "febo_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+      "description": "FEBO specification version"
+    },
+    
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Problem identifier"
+    },
+    
+    "description": {
+      "type": "string",
+      "description": "Human-readable description"
+    },
+    
+    "conventions": {
+      "$ref": "#/definitions/conventions"
+    },
+    
+    "parameters": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/parameter" },
+      "description": "Model parameters resolved at solve time"
+    },
+    
+    "variables": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/variable" },
+      "minProperties": 1
+    },
+    
+    "data": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/data_ref" }
+    },
+    
+    "functions": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/function_def" },
+      "description": "External function registry for functional terms"
+    },
+    
+    "interactions": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/interaction" }
+    },
+    
+    "terms": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/term" }
+    },
+    
+    "components": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/component" }
+    },
+    
+    "hamiltonians": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/hamiltonian" },
+      "minProperties": 1
+    },
+    
+    "ensemble": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/ensemble_entry" },
+      "minItems": 1
+    },
+    
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  
+  "definitions": {
+    "parameter": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["int", "float", "string", "bool"],
+          "description": "Parameter type"
+        },
+        "default": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" },
+            { "type": "boolean" }
+          ],
+          "description": "Default value (if absent, parameter is required)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "bounds": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Numeric validation bounds [lo, hi]"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "conventions": {
+      "type": "object",
+      "properties": {
+        "index_base": {
+          "type": "integer",
+          "enum": [0, 1],
+          "default": 1,
+          "description": "Index base: 0 or 1 (default: 1)"
+        },
+        "expr_lang": {
+          "type": "string",
+          "default": "febo_expr_v1",
+          "description": "Expression language version"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "variable": {
+      "type": "object",
+      "required": ["type", "shape"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["continuous", "binary", "integer"]
+        },
+        "shape": {
+          "$ref": "#/definitions/shape"
+        },
+        "bounds": {
+          "$ref": "#/definitions/bounds"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "shape": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "integer", "minimum": 1 },
+          { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" }
+        ]
+      },
+      "minItems": 1
+    },
+    
+    "bounds": {
+      "oneOf": [
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "number" },
+              { "type": "string", "enum": ["inf", "-inf"] },
+              { "type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$" }
+            ]
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        {
+          "type": "object",
+          "properties": {
+            "lower": {
+              "oneOf": [
+                { "type": "number" },
+                { "type": "string" }
+              ]
+            },
+            "upper": {
+              "oneOf": [
+                { "type": "number" },
+                { "type": "string" }
+              ]
+            }
+          }
+        },
+        { "type": "null" }
+      ]
+    },
+    
+    "data_ref": {
+      "type": "object",
+      "properties": {
+        "source": { "type": "string" },
+        "shape": { "$ref": "#/definitions/shape" },
+        "format": {
+          "type": "string",
+          "enum": ["csv", "json", "npy", "h5", "parquet", "low_rank", "sparse"]
+        },
+        "dtype": {
+          "type": "string",
+          "enum": ["float64", "float32", "int64", "int32", "bool"],
+          "default": "float64",
+          "description": "Data type"
+        },
+        "storage": {
+          "type": "string",
+          "enum": ["row_major", "column_major"],
+          "description": "Storage layout hint"
+        },
+        "rank": { "type": "integer", "minimum": 1 },
+        "inline": {
+          "type": "array",
+          "description": "Inline data for small arrays"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "function_def": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["python", "wasm", "shared_lib", "http"],
+          "description": "Function implementation type"
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Python module:function path"
+        },
+        "uri": {
+          "type": "string",
+          "description": "URI for wasm, shared_lib, or http"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Symbol name for shared_lib"
+        },
+        "method": {
+          "type": "string",
+          "enum": ["GET", "POST"],
+          "description": "HTTP method"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "interaction": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["none", "all_indices", "sparse", "groups", "laplacian", "low_rank", "one_hot", "index_set"],
+          "description": "Interaction type"
+        },
+        "range": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "integer" },
+              { "type": "string" }
+            ]
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "Single index range [lo, hi], binds symbol 'i'"
+        },
+        "ranges": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "integer" },
+                { "type": "string" }
+              ]
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "Named index ranges {i: [lo, hi], j: [lo, hi]}"
+        },
+        "source": {
+          "type": "string",
+          "description": "Data reference (if matches data: key) or file path"
+        },
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "minItems": 2
+          },
+          "description": "Inline pairs for sparse interaction"
+        },
+        "dims": {
+          "type": "array",
+          "items": { "type": "integer" }
+        },
+        "connectivity": {
+          "type": "integer",
+          "enum": [4, 8]
+        },
+        "factors": { "type": "string" },
+        "rank": { "type": "integer", "minimum": 1 },
+        "groups": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Data reference (if matches data: key)"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": { "type": "integer" }
+              },
+              "description": "Inline groups (list of lists of indices)"
+            }
+          ]
+        },
+        "bind": {
+          "oneOf": [
+            { "type": "string", "description": "Single index symbol" },
+            {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 2,
+              "description": "Multiple index symbols for sparse/dense"
+            }
+          ],
+          "description": "Index symbol(s) bound by this interaction"
+        },
+        "indices": {
+          "type": "array",
+          "items": { "type": "integer" }
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "term": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["analytic", "functional", "constant"]
+        },
+        "arity": {
+          "type": "string",
+          "enum": ["constant", "unary", "binary", "ternary", "n-ary"]
+        },
+        "expr": {
+          "type": "string",
+          "description": "Expression string (for analytic terms)"
+        },
+        "func": {
+          "type": "string",
+          "description": "Function name from registry (for functional terms)"
+        },
+        "args": {
+          "type": "string",
+          "description": "Arguments to pass to function (for functional terms)"
+        },
+        "value": {
+          "type": "number",
+          "description": "Value for constant terms"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "aggregator": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": ["sum", "prod", "max", "min", "mean", "logsumexp", "logprod", "identity"]
+        },
+        {
+          "type": "object",
+          "required": ["type"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["sum", "prod", "max", "min", "mean", "logsumexp", "logprod", "cvar", "identity"]
+            },
+            "beta": {
+              "type": "number",
+              "description": "Temperature parameter for logsumexp"
+            },
+            "alpha": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Confidence level for cvar"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    
+    "component": {
+      "type": "object",
+      "required": ["term"],
+      "properties": {
+        "term": {
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/definitions/term" }
+          ]
+        },
+        "interaction": {
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/definitions/interaction" }
+          ]
+        },
+        "agg": { "$ref": "#/definitions/aggregator" }
+      },
+      "additionalProperties": false
+    },
+    
+    "hamiltonian_component": {
+      "type": "object",
+      "properties": {
+        "use": {
+          "type": "string",
+          "description": "Reference to component"
+        },
+        "alpha": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" }
+          ],
+          "default": 1,
+          "description": "Component weight (number or expression)"
+        },
+        "term": {
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/definitions/term" }
+          ],
+          "description": "Inline term (alternative to use)"
+        },
+        "interaction": {
+          "oneOf": [
+            { "type": "string" },
+            { "$ref": "#/definitions/interaction" }
+          ],
+          "description": "Inline interaction"
+        },
+        "agg": {
+          "$ref": "#/definitions/aggregator",
+          "description": "Inline aggregator"
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "hamiltonian": {
+      "type": "object",
+      "required": ["components"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["subsystem", "coupling"],
+          "description": "Optional: must be consistent with couples"
+        },
+        "couples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "description": "Variable sets coupled (implies type: coupling)"
+        },
+        "components": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/hamiltonian_component" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    
+    "ensemble_entry": {
+      "type": "object",
+      "required": ["use"],
+      "properties": {
+        "use": {
+          "type": "string",
+          "description": "Reference to hamiltonian"
+        },
+        "weight": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" }
+          ],
+          "default": 1,
+          "description": "Hamiltonian weight (number or expression)"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

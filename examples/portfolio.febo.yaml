@@ -1,0 +1,53 @@
+# Portfolio Optimization
+# maximize: μᵀw (return)
+# minimize: wᵀΣw (variance)
+# subject to: Σw = 1, w ≥ 0
+
+febo_version: "0.1"
+name: portfolio
+conventions:
+  index_base: 1
+
+parameters:
+  n: {type: int, default: 100, description: "Number of assets"}
+  risk_aversion: {type: float, default: 0.5, bounds: [0, 10], description: "Risk aversion coefficient"}
+
+variables:
+  w: {type: continuous, shape: [n], bounds: [0, 1]}
+
+data:
+  mu: {source: "returns.csv", shape: [n]}
+  Sigma: {source: "covariance.csv", shape: [n, n]}
+
+interactions:
+  all_i:  {type: all_indices, range: [1, n]}
+  all_ij: {type: all_indices, ranges: {i: [1, n], j: [1, n]}}
+
+terms:
+  return: {type: analytic, arity: unary, expr: "mu[i] * w[i]"}
+  risk:   {type: analytic, arity: binary, expr: "Sigma[i,j] * w[i] * w[j]"}
+  budget: {type: analytic, arity: n-ary, expr: "(sum(w) - 1)^2"}
+
+components:
+  total_return: {term: return, interaction: all_i, agg: sum}
+  total_risk:   {term: risk, interaction: all_ij, agg: sum}
+  budget_pen:   {term: budget}
+
+hamiltonians:
+  H_return: {components: [{use: total_return, alpha: -1}]}
+  H_risk:   {components: [{use: total_risk, alpha: 1}]}
+  H_budget: {components: [{use: budget_pen, alpha: 1}]}
+
+ensemble:
+  - {use: H_return, weight: 1}
+  - {use: H_risk, weight: risk_aversion}
+  - {use: H_budget, weight: 10000}
+
+metadata:
+  problem_type: quadratic
+  typical_scale: "100-10000 assets"
+
+# Usage:
+#   xtellix solve portfolio.febo.yaml                              # n=100, risk_aversion=0.5
+#   xtellix solve portfolio.febo.yaml --param n=10000              # 10000 assets
+#   xtellix solve portfolio.febo.yaml --param risk_aversion=2.0    # more risk-averse
